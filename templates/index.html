@@ -1,1 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voucher Generator</title>
+</head>
+<body>
+  <h2>Upload Master Excel + Enter Itinerary</h2>
+  <form method="POST" enctype="multipart/form-data">
+    <label>Upload Master Excel:</label><br>
+    <input type="file" name="master_file" /><br><br>
 
+    <label>Trip Start Date:</label><br>
+    <input type="date" name="start_date" required /><br><br>
+
+    <label>Day-wise Itinerary (one per line):</label><br>
+    <textarea name="itinerary" rows="6" cols="60"></textarea><br><br>
+
+    <input type="submit" value="Generate Voucher" />
+  </form>
+</body>
+</html>
