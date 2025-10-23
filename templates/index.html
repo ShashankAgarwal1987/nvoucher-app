@@ -16,11 +16,10 @@
   <h2>Travel LYKKE – Voucher Generator (Template Injection + OpenAI)</h2>
   <form method="POST" enctype="multipart/form-data">
     <fieldset>
-      <legend>1) Upload Files</legend>
-      <label>Voucher Template (.xlsx) – your exact service voucher (save .xls as .xlsx once)</label>
-      <input type="file" name="template_file" accept=".xlsx" required>
-      <label>Master Excel (.xlsx) – must include columns “Particular”, “Formatted Output” (optional “Tour Description”)</label>
-      <input type="file" name="master_file" accept=".xlsx" required>
+      <legend>1) Upload File</legend>
+      <label>Master Excel (.xlsx) – must include columns “Particular”, “Formatted Output”</label>
+      <!-- 👇 name MUST be 'file' to match app.py -->
+      <input type="file" name="file" accept=".xlsx" required>
     </fieldset>
 
     <fieldset>
