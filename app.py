@@ -3,7 +3,6 @@ import pandas as pd
 from openai import OpenAI
 import os
 from io import BytesIO
-import gc
 
 app = Flask(__name__)
 
@@ -11,7 +10,6 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def get_embedding(text, model="text-embedding-3-small"):
-    """Fetch embeddings with memory safety."""
     try:
         response = client.embeddings.create(input=[text], model=model)
         return response.data[0].embedding
@@ -30,18 +28,13 @@ def index():
             return "⚠️ Empty file"
 
         try:
-            # Use iterator to avoid loading full file in memory
-            df_iter = pd.read_excel(file, chunksize=1)  # one row at a time
+            # ❌ Wrong: pd.read_excel(file, chunksize=1000)
+            # ✅ Correct:
+            df = pd.read_excel(file)
 
-            output = BytesIO()
-            writer = pd.ExcelWriter(output, engine="xlsxwriter")
-            results = []
-
-            day_counter = 1
-            for chunk in df_iter:
-                row = chunk.iloc[0]  # single row
-                text = str(row.iloc[2]) if len(row) > 2 else ""  # 3rd column
-
+            outputs = []
+            for i, row in df.iterrows():
+                text = str(row.iloc[2]) if len(row) > 2 else ""  # safely get 3rd column
                 embedding = get_embedding(text)
 
                 if embedding is None:
@@ -49,19 +42,15 @@ def index():
                 else:
                     formatted = f"Processed service: {text}"
 
-                results.append({"Day": f"Day {day_counter}", "Formatted": formatted})
-                day_counter += 1
+                outputs.append({"Day": f"Day {i+1}", "Formatted": formatted})
 
-                # Free memory
-                del embedding, chunk, row
-                gc.collect()
+            result_df = pd.DataFrame(outputs)
 
-            # Convert to DataFrame and save once
-            result_df = pd.DataFrame(results)
-            result_df.to_excel(writer, index=False, sheet_name="Voucher")
-            writer.close()
-
+            # Save result to Excel
+            output = BytesIO()
+            result_df.to_excel(output, index=False)
             output.seek(0)
+
             return send_file(output, download_name="voucher_output.xlsx", as_attachment=True)
 
         except Exception as e:
