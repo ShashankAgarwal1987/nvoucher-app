@@ -2,23 +2,60 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>OpenAI Voucher Generator</title>
+  <title>Travel LYKKE – Voucher Generator</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial; max-width: 900px; margin: 32px auto;}
+    fieldset{border:1px solid #ddd; padding:16px; border-radius:8px; margin-bottom:18px;}
+    label{display:block; margin:8px 0 4px;}
+    input, textarea{width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;}
+    .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+    button{background:#0E7AFE; color:#fff; padding:10px 14px; border:none; border-radius:6px; cursor:pointer;}
+  </style>
 </head>
 <body>
-  <h2>Service Voucher</h2>
+  <h2>Travel LYKKE – Voucher Generator (Template Injection + OpenAI)</h2>
   <form method="POST" enctype="multipart/form-data">
-    <p><label>Upload Master Excel (.xlsx) with columns “Particular” and “Formatted Output”:</label><br>
-       <input type="file" name="master_file" accept=".xlsx" required></p>
+    <fieldset>
+      <legend>1) Upload Files</legend>
+      <label>Voucher Template (.xlsx) – your exact service voucher (save .xls as .xlsx once)</label>
+      <input type="file" name="template_file" accept=".xlsx" required>
+      <label>Master Excel (.xlsx) – must include columns “Particular”, “Formatted Output” (optional “Tour Description”)</label>
+      <input type="file" name="master_file" accept=".xlsx" required>
+    </fieldset>
 
-    <p><label>Start Date:</label><br>
-       <input type="date" name="start_date" required></p>
+    <fieldset>
+      <legend>2) Booking Details (optional; auto-fills if labels exist)</legend>
+      <div class="grid">
+        <div>
+          <label>Confirmation ID</label>
+          <input type="text" name="confirmation_id" placeholder="TLYK2025xxxxx">
+        </div>
+        <div>
+          <label>Passenger / Guest Name</label>
+          <input type="text" name="passenger_name" placeholder="Guest Name">
+        </div>
+      </div>
+      <div class="grid">
+        <div>
+          <label>Start Date (for auto dates)</label>
+          <input type="date" name="start_date">
+        </div>
+        <div>
+          <label>Destination</label>
+          <input type="text" name="destination" placeholder="Egypt">
+        </div>
+      </div>
+    </fieldset>
 
-    <p><label>Day-wise Itinerary (one line per day; use “+” for multiple services in a day):</label><br>
-       <textarea name="itinerary" rows="10" cols="80" placeholder="Day 1: Arrival Cairo + Airport transfer
-Day 2: Pyramids Day Tour + Sleeper train Cairo to Aswan
-Day 3: Aswan Highlights"></textarea></p>
+    <fieldset>
+      <legend>3) Day-wise Itinerary</legend>
+      <label>One line per day. Use “+” to add multiple services in a day.</label>
+      <textarea name="itinerary" rows="10" placeholder="Day 1: Arrival in Cairo + Airport Transfer
+Day 2: Pyramids Day Tour + Sleeper Train Cairo to Aswan
+Day 3: Aswan Highlights"></textarea>
+    </fieldset>
 
-    <button type="submit">Generate Voucher Excel</button>
+    <button type="submit">Generate Voucher</button>
   </form>
 </body>
 </html>
