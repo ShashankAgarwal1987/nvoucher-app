@@ -1,21 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Voucher Generator</title>
+  <meta charset="utf-8">
+  <title>OpenAI Voucher Generator</title>
 </head>
 <body>
-  <h2>Upload Master Excel + Enter Itinerary</h2>
+  <h2>Service Voucher</h2>
   <form method="POST" enctype="multipart/form-data">
-    <label>Upload Master Excel:</label><br>
-    <input type="file" name="master_file" /><br><br>
+    <p><label>Upload Master Excel (.xlsx) with columns “Particular” and “Formatted Output”:</label><br>
+       <input type="file" name="master_file" accept=".xlsx" required></p>
 
-    <label>Trip Start Date:</label><br>
-    <input type="date" name="start_date" required /><br><br>
+    <p><label>Start Date:</label><br>
+       <input type="date" name="start_date" required></p>
 
-    <label>Day-wise Itinerary (one per line):</label><br>
-    <textarea name="itinerary" rows="6" cols="60"></textarea><br><br>
+    <p><label>Day-wise Itinerary (one line per day; use “+” for multiple services in a day):</label><br>
+       <textarea name="itinerary" rows="10" cols="80" placeholder="Day 1: Arrival Cairo + Airport transfer
+Day 2: Pyramids Day Tour + Sleeper train Cairo to Aswan
+Day 3: Aswan Highlights"></textarea></p>
 
-    <input type="submit" value="Generate Voucher" />
+    <button type="submit">Generate Voucher Excel</button>
   </form>
 </body>
 </html>
