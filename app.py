@@ -4,115 +4,146 @@ from openai import OpenAI
 import os
 from io import BytesIO
 from docx import Document
-from datetime import datetime, timedelta
-from configs import COUNTRY_CONFIGS
-import numpy as np
+from docx.shared import Inches
 
 app = Flask(__name__)
-
-# OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# --- OpenAI Embedding function ---
 def get_embedding(text, model="text-embedding-3-small"):
-    """Get OpenAI embedding for text."""
-    response = client.embeddings.create(input=[text], model=model)
-    return response.data[0].embedding
-
-def cosine_similarity(vec1, vec2):
-    """Cosine similarity between two vectors."""
-    vec1, vec2 = np.array(vec1), np.array(vec2)
-    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-
-def match_service(text, master_df):
-    """
-    Match service text against Master Excel using OpenAI embeddings.
-    Returns closest match's formatted output.
-    """
     try:
-        input_embedding = get_embedding(text)
-        best_score, best_row = -1, None
-
-        for _, row in master_df.iterrows():
-            ref_text = str(row["Particular"])
-            ref_embedding = get_embedding(ref_text)
-            score = cosine_similarity(input_embedding, ref_embedding)
-
-            if score > best_score:
-                best_score = score
-                best_row = row
-
-        if best_row is not None:
-            return best_row["Formatted Output"]
-
-        return f"⚠️ Could not match service: {text}"
-
+        response = client.embeddings.create(input=[text], model=model)
+        return response.data[0].embedding
     except Exception as e:
-        return f"Error processing {text}: {e}"
+        print("Embedding error:", e)
+        return None
+
+# --- Static company details ---
+COMPANY_DETAILS = {
+    "COMPANY NAME": "Travel Lykke Private Limited",
+    "MAIL ID": "support@lykke.travel",
+    "PHONE NO.": "+91-8047493335",
+    "ADDRESS": "1st Floor, Bhau Institute – COEP, Shivajinagar, Pune, Maharashtra 411005"
+}
+
+# --- Egypt escalation + notes ---
+EGYPT_ESCALATION = """\
+Escalation Matrix India Office:
+Leader (Ms. Heba): +201025267265
+Sales Leader (Lalit): +918826894140
+
+Escalation Matrix Egypt Office:
+Egypt Operations Head (Ms. Reem Soud): +2 01011900567
+Company CEO (Mr. Hossam): +2 01116101030
+"""
+
+EGYPT_NOTES = """\
+Special Note on Egypt:
+* Total Payable tip for the trip: 120 USD [Days in Egypt*5*Number of Pax], kindly pay the same upon arrival.
+* Tips are cultural and compulsory in Egypt. If you had to pay the same extra anywhere beyond the amount collected in advance, please intimate the team and the same will be refunded.
+* Check-in/Checkout timing, hotel bedding type, etc. are controlled by respective accommodation only.
+"""
+
+EGYPT_COMMENTS = """\
+Other Comments or Special Instructions:
+Above mentioned services are confirmed and non-changeable.
+Any changes would attract full cancellation of tours/services and additional tours/services will be charged as per the company policies and directly payable in Egypt only.
+"""
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        destination = request.form.get("destination", "Egypt")
-        start_date_str = request.form.get("start_date")
-        itinerary_text = request.form.get("itinerary")
-        hotel_text = request.form.get("hotelinfo")
+        try:
+            # --- Uploads + Inputs ---
+            master_file = request.files["master_file"]
+            itinerary_text = request.form["itinerary"].strip()
+            confirmation_id = request.form.get("confirmation_id", "N/A")
+            passenger_name = request.form.get("passenger_name", "N/A")
+            start_date = request.form.get("start_date", "N/A")
+            destination = request.form.get("destination", "N/A")
 
-        master_file = request.files.get("master_file")
-        if not master_file:
-            return "⚠️ Please upload master Excel"
+            df_master = pd.read_excel(master_file)
+            master_services = df_master["Service"].tolist()
+            master_outputs = df_master["Formatted Output"].tolist()
+            master_hotels = df_master.get("Hotel", pd.Series([""] * len(df_master))).tolist()
 
-        if not start_date_str or not itinerary_text:
-            return "⚠️ Please provide start date and itinerary."
+            # Precompute embeddings
+            master_embeddings = [get_embedding(s) for s in master_services]
 
-        # load master excel
-        master_df = pd.read_excel(master_file)
+            # Parse itinerary lines
+            itinerary_lines = itinerary_text.split("\n")
+            document = Document()
 
-        # inputs
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        itinerary_lines = [line.strip() for line in itinerary_text.split("\n") if line.strip()]
-        hotel_lines = [line.strip() for line in hotel_text.split("\n")] if hotel_text else []
+            # Insert Logo
+            try:
+                document.add_picture("static/logo.png", width=Inches(2))
+            except Exception:
+                document.add_paragraph("[Logo Missing]")
 
-        # Create Word doc
-        doc = Document()
-        doc.add_heading("Travel LYKKE – Service Voucher", level=0)
+            # --- Company Details Section ---
+            document.add_heading("COMPANY DETAILS", level=1)
+            company_table = document.add_table(rows=len(COMPANY_DETAILS), cols=2)
+            company_table.style = "Table Grid"
+            for i, (k, v) in enumerate(COMPANY_DETAILS.items()):
+                company_table.cell(i, 0).text = k
+                company_table.cell(i, 1).text = v
+            document.add_paragraph("")
 
-        doc.add_paragraph(f"Destination: {destination}")
-        doc.add_paragraph(f"Trip Start Date: {start_date.strftime('%d-%b-%Y')}")
-        doc.add_paragraph("")
+            # --- Booking Details Section ---
+            document.add_heading("BOOKING DETAILS", level=1)
+            booking_table = document.add_table(rows=4, cols=2)
+            booking_table.style = "Table Grid"
+            booking_table.cell(0, 0).text = "Confirmation ID"
+            booking_table.cell(0, 1).text = confirmation_id
+            booking_table.cell(1, 0).text = "Passenger / Guest Name"
+            booking_table.cell(1, 1).text = passenger_name
+            booking_table.cell(2, 0).text = "Travel Dates"
+            booking_table.cell(2, 1).text = f"{start_date} to TBD"
+            booking_table.cell(3, 0).text = "Destination"
+            booking_table.cell(3, 1).text = destination
+            document.add_paragraph("")
 
-        # Day wise details
-        for i, line in enumerate(itinerary_lines):
-            day_date = (start_date + timedelta(days=i)).strftime("%d-%b-%Y")
-            doc.add_heading(f"Day {i+1} – {day_date}", level=1)
+            # --- Day-wise itinerary ---
+            document.add_heading("ITINERARY", level=1)
+            for i, line in enumerate(itinerary_lines, 1):
+                document.add_heading(f"Day {i}", level=2)
+                services = [s.strip() for s in line.split("+")]
 
-            # multiple services per day (split by +)
-            services = [s.strip() for s in line.split("+")]
-            for service in services:
-                formatted = match_service(service, master_df)
-                doc.add_paragraph(formatted)
+                for service in services:
+                    query_emb = get_embedding(service)
+                    if query_emb:
+                        sims = [sum(a*b for a, b in zip(query_emb, ref)) for ref in master_embeddings]
+                        best_idx = sims.index(max(sims))
+                        formatted = master_outputs[best_idx]
+                        hotel = master_hotels[best_idx]
+                    else:
+                        formatted = f"⚠️ Could not process: {service}"
+                        hotel = ""
 
-            # hotel info
-            if i < len(hotel_lines):
-                doc.add_paragraph(f"Hotel: {hotel_lines[i]}")
+                    document.add_paragraph(f"Service: {formatted}")
+                    if hotel:
+                        document.add_paragraph(f"Hotel: {hotel}")
 
-        # Escalation + Notes from configs
-        if destination in COUNTRY_CONFIGS:
-            config = COUNTRY_CONFIGS[destination]
-            doc.add_page_break()
-            doc.add_heading("Escalation Matrix", level=1)
-            doc.add_paragraph(config["escalation_matrix"])
+            # --- Escalation + Notes + Comments ---
+            document.add_heading("Escalation Matrix", level=1)
+            document.add_paragraph(EGYPT_ESCALATION)
 
-            doc.add_heading("Special Notes", level=1)
-            doc.add_paragraph(config["special_note"])
+            document.add_heading("Special Notes", level=1)
+            document.add_paragraph(EGYPT_NOTES)
 
-            doc.add_heading("Other Comments", level=1)
-            doc.add_paragraph(config["other_comments"])
+            document.add_heading("Other Comments", level=1)
+            document.add_paragraph(EGYPT_COMMENTS)
 
-        # Save Word file
-        output = BytesIO()
-        doc.save(output)
-        output.seek(0)
+            # --- Save file ---
+            output = BytesIO()
+            document.save(output)
+            output.seek(0)
+            return send_file(output, as_attachment=True, download_name="voucher.docx")
 
-        return send_file(output, download_name="Service_Voucher.docx", as_attachment=True)
+        except Exception as e:
+            return f"❌ Error: {str(e)}"
 
     return render_template("index.html")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
