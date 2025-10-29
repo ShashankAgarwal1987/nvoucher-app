@@ -1,146 +1,94 @@
 from flask import Flask, request, render_template, send_file
+import pandas as pd
+from openai import OpenAI
 import os
 from io import BytesIO
+from docx import Document
 from datetime import datetime, timedelta
-
-import numpy as np
-import pandas as pd
-from openai import OpenAI, APIError, RateLimitError, AuthenticationError
+from configs import COUNTRY_CONFIGS
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8 MB upload cap
 
-# ---------- OpenAI ----------
+# OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-EMBED_MODEL = "text-embedding-3-small"
 
-# ---------- Helpers ----------
-def normalize_cols(df: pd.DataFrame):
-    """Map canonical names to actual column names (case/space tolerant)."""
-    name_map = {c.lower().strip(): c for c in df.columns}
-    def pick(*opts):
-        for o in opts:
-            if o in name_map: 
-                return name_map[o]
-        return None
-    col_particular = pick("particular")
-    col_formatted  = pick("formatted output", "formatted_output", "formatted")
-    col_desc       = pick("tour description", "tour_description", "description")
-    if not col_particular or not col_formatted:
-        raise ValueError("Master must have columns: 'Particular' and 'Formatted Output'.")
-    return col_particular, col_formatted, col_desc
+def match_service(text, master_df):
+    """
+    Use embeddings + OpenAI to find closest matching formatted output.
+    """
+    try:
+        # For now we just do simple fuzzy match
+        for _, row in master_df.iterrows():
+            if str(row["Particular"]).lower() in text.lower():
+                return row["Formatted Output"]
+        # fallback
+        return f"⚠️ Could not match service: {text}"
+    except Exception as e:
+        return f"Error processing {text}: {e}"
 
-def embed_batch(texts, batch=64):
-    """Embed texts in small batches for stability on free tier."""
-    out = []
-    for i in range(0, len(texts), batch):
-        chunk = texts[i:i+batch]
-        resp = client.embeddings.create(model=EMBED_MODEL, input=chunk)
-        out.extend([d.embedding for d in resp.data])
-    return np.array(out, dtype=np.float32)
-
-def cosine_sim_matrix(A, b):
-    """Cosine similarity between matrix A (n,d) and vector b (d,)."""
-    b = b.astype(np.float32)
-    An = A / (np.linalg.norm(A, axis=1, keepdims=True) + 1e-8)
-    bn = b / (np.linalg.norm(b) + 1e-8)
-    return np.dot(An, bn)
-
-def clean_itinerary(text: str):
-    """Split multi-day itinerary into list of list of activities (handles + and Day X:)."""
-    days = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        # strip Day X:
-        if line.lower().startswith("day"):
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                line = parts[1].strip()
-        # split by +
-        acts = [a.strip() for a in line.split("+") if a.strip()]
-        days.append(acts)
-    return days
-
-# ---------- Web ----------
 @app.route("/", methods=["GET", "POST"])
 def index():
-    if request.method == "GET":
-        return render_template("index.html")
+    if request.method == "POST":
+        destination = request.form.get("destination", "Egypt")
+        start_date_str = request.form.get("start_date")
+        itinerary_text = request.form.get("itinerary")
+        hotel_text = request.form.get("hotelinfo")
 
-    # Validate inputs
-    if "file" not in request.files:
-        return "⚠️ No file uploaded", 400
-    master_file = request.files["file"]
-    if not master_file or master_file.filename == "":
-        return "⚠️ Empty file", 400
+        master_file = request.files.get("master_file")
+        if not master_file:
+            return "⚠️ Please upload master Excel"
 
-    itinerary_text = (request.form.get("itinerary") or "").strip()
-    if not itinerary_text:
-        return "⚠️ Please paste a day-wise itinerary", 400
-    start_date_str = (request.form.get("start_date") or "").strip()
+        if not start_date_str or not itinerary_text:
+            return "⚠️ Please provide start date and itinerary."
 
-    # Parse itinerary days
-    days = clean_itinerary(itinerary_text)
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else None
-    except Exception:
-        start_date = None
+        # load master excel
+        master_df = pd.read_excel(master_file)
 
-    # Read master (keep memory small)
-    try:
-        df = pd.read_excel(master_file, engine="openpyxl")
-    except Exception as e:
-        return f"❌ Could not read Excel: {e}", 400
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        itinerary_lines = [line.strip() for line in itinerary_text.split("\n") if line.strip()]
+        hotel_lines = [line.strip() for line in hotel_text.split("\n") if hotel_text else []]
 
-    try:
-        col_p, col_f, col_d = normalize_cols(df)
-    except ValueError as e:
-        return f"❌ {e}", 400
+        # Create Word doc
+        doc = Document()
+        doc.add_heading("Travel LYKKE – Service Voucher", level=0)
 
-    # Trim and cap for free tier
-    MAX_ROWS = 1000
-    if len(df) > MAX_ROWS:
-        df = df.iloc[:MAX_ROWS].copy()
+        doc.add_paragraph(f"Destination: {destination}")
+        doc.add_paragraph(f"Trip Start Date: {start_date.strftime('%d-%b-%Y')}")
+        doc.add_paragraph("")
 
-    for c in [col_p, col_f, col_d] if col_d else [col_p, col_f]:
-        if c and df[c].dtype == object:
-            df[c] = df[c].astype(str).str.slice(0, 800)
+        # Day wise
+        for i, line in enumerate(itinerary_lines):
+            day_date = (start_date + timedelta(days=i)).strftime("%d-%b-%Y")
+            doc.add_heading(f"Day {i+1} – {day_date}", level=1)
 
-    # Build keys to embed (Particular + optional Description)
-    keys = df[col_p].astype(str).tolist()
-    if col_d:
-        keys = [(p + " | " + (d or "")) for p, d in zip(df[col_p].astype(str), df[col_d].fillna("").astype(str))]
+            # Split multiple services with +
+            services = [s.strip() for s in line.split("+")]
+            for service in services:
+                formatted = match_service(service, master_df)
+                doc.add_paragraph(formatted)
 
-    try:
-        key_vecs = embed_batch(keys, batch=64)
-    except (AuthenticationError, RateLimitError, APIError) as e:
-        return f"❌ OpenAI error while embedding master: {e}", 500
+            # hotel info
+            if i < len(hotel_lines):
+                doc.add_paragraph(f"Hotel: {hotel_lines[i]}")
 
-    # Match each activity to best Formatted Output
-    rows = []  # list of {"Date":..., "Formatted":...}
-    for i, activities in enumerate(days, start=1):
-        block_texts = []
-        for act in activities:
-            try:
-                qv = embed_batch([act])[0]
-                sims = cosine_sim_matrix(key_vecs, qv)
-                idx = int(np.argmax(sims))
-                formatted = str(df.iloc[idx][col_f])
-            except Exception as e:
-                formatted = f"⚠️ Could not map: {act} (Error: {e})"
-            block_texts.append(formatted)
+        # Escalation + Notes
+        if destination in COUNTRY_CONFIGS:
+            config = COUNTRY_CONFIGS[destination]
+            doc.add_page_break()
+            doc.add_heading("Escalation Matrix", level=1)
+            doc.add_paragraph(config["escalation_matrix"])
 
-        date_str = (start_date + timedelta(days=i-1)).strftime("%d-%b-%Y") if start_date else f"Day {i}"
-        rows.append({"Date": date_str, "Formatted Output": "\n\n".join(block_texts)})
+            doc.add_heading("Special Notes", level=1)
+            doc.add_paragraph(config["special_note"])
 
-    # Send as Excel
-    out = BytesIO()
-    pd.DataFrame(rows).to_excel(out, index=False, sheet_name="Voucher", engine="openpyxl")
-    out.seek(0)
-    return send_file(out, download_name="voucher_output.xlsx", as_attachment=True)
+            doc.add_heading("Other Comments", level=1)
+            doc.add_paragraph(config["other_comments"])
 
+        # Save Word
+        output = BytesIO()
+        doc.save(output)
+        output.seek(0)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+        return send_file(output, download_name="Service_Voucher.docx", as_attachment=True)
+
+    return render_template("index.html")
