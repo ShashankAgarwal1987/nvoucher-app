@@ -13,45 +13,37 @@
   </style>
 </head>
 <body>
-  <h2>Travel LYKKE – Voucher Generator (Template Injection + OpenAI)</h2>
+  <h2>Travel LYKKE – Service Voucher Generator</h2>
   <form method="POST" enctype="multipart/form-data">
     <fieldset>
-      <legend>1) Upload File</legend>
-      <label>Master Excel (.xlsx) – must include columns “Particular”, “Formatted Output”</label>
-      <!-- 👇 name MUST be 'file' to match app.py -->
-      <input type="file" name="file" accept=".xlsx" required>
+      <legend>1) Upload Master Excel</legend>
+      <input type="file" name="master_file" accept=".xlsx" required>
     </fieldset>
 
     <fieldset>
-      <legend>2) Booking Details (optional; auto-fills if labels exist)</legend>
+      <legend>2) Trip Details</legend>
       <div class="grid">
         <div>
-          <label>Confirmation ID</label>
-          <input type="text" name="confirmation_id" placeholder="TLYK2025xxxxx">
+          <label>Destination Country</label>
+          <input type="text" name="destination" value="Egypt">
         </div>
         <div>
-          <label>Passenger / Guest Name</label>
-          <input type="text" name="passenger_name" placeholder="Guest Name">
-        </div>
-      </div>
-      <div class="grid">
-        <div>
-          <label>Start Date (for auto dates)</label>
-          <input type="date" name="start_date">
-        </div>
-        <div>
-          <label>Destination</label>
-          <input type="text" name="destination" placeholder="Egypt">
+          <label>Trip Start Date</label>
+          <input type="date" name="start_date" required>
         </div>
       </div>
     </fieldset>
 
     <fieldset>
       <legend>3) Day-wise Itinerary</legend>
-      <label>One line per day. Use “+” to add multiple services in a day.</label>
-      <textarea name="itinerary" rows="10" placeholder="Day 1: Arrival in Cairo + Airport Transfer
-Day 2: Pyramids Day Tour + Sleeper Train Cairo to Aswan
-Day 3: Aswan Highlights"></textarea>
+      <textarea name="itinerary" rows="6" placeholder="Day 1: Arrival in Cairo + Transfer
+Day 2: Pyramids Day Tour + Sleeper Train Cairo to Aswan"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>4) Hotel Info</legend>
+      <textarea name="hotelinfo" rows="4" placeholder="Day 1: Hotel XYZ, Deluxe Room
+Day 2: Hotel ABC, Standard Room"></textarea>
     </fieldset>
 
     <button type="submit">Generate Voucher</button>
