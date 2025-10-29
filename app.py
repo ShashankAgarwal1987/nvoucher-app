@@ -46,7 +46,7 @@ def index():
 
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         itinerary_lines = [line.strip() for line in itinerary_text.split("\n") if line.strip()]
-        hotel_lines = [line.strip() for line in hotel_text.split("\n") if hotel_text else []]
+        hotel_lines = [line.strip() for line in hotel_text.split("\n")] if hotel_text else []
 
         # Create Word doc
         doc = Document()
